@@ -48,7 +48,7 @@ exports.handler = async (event, context) => {
   const [longitude, latitude] = coords;
   const today = new Date();
   const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(today.getDate() - 7);
+  sevenDaysAgo.setDate(today.getDate() - 917);
 
   const start = formatDateAPI(sevenDaysAgo);
   const end = formatDateAPI(today);
