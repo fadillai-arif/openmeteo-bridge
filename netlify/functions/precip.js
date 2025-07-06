@@ -1,7 +1,4 @@
 const https = require('https');
-const url = require('url');
-
-const PORT = process.env.PORT || 3000;
 
 const LOCATIONS = {
   Berastagi: [98.52612, 3.238704],
@@ -37,30 +34,29 @@ function formatDateAPI(date) {
   return date.toISOString().split('T')[0];
 }
 
-const server = http.createServer(async (req, res) => {
-  const parsed = url.parse(req.url, true);
-  if (parsed.pathname === '/precip') {
-    const locationName = parsed.query.location || "Solok";
-    const coords = LOCATIONS[locationName];
+exports.handler = async (event, context) => {
+  const locationName = event.queryStringParameters.location || "Solok";
+  const coords = LOCATIONS[locationName];
 
-    if (!coords) {
-      res.writeHead(400, { 'Content-Type': 'text/plain' });
-      res.end("Invalid location. Please use ?location=Solok");
-      return;
-    }
+  if (!coords) {
+    return {
+      statusCode: 400,
+      body: "Invalid location. Use ?location=Solok"
+    };
+  }
 
-    const [longitude, latitude] = coords;
+  const [longitude, latitude] = coords;
+  const today = new Date();
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(today.getDate() - 7);
 
-    const today = new Date();
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(today.getDate() - 7);
+  const start = formatDateAPI(sevenDaysAgo);
+  const end = formatDateAPI(today);
+  const timezone = "Asia/Bangkok";
 
-    const start = formatDateAPI(sevenDaysAgo);
-    const end = formatDateAPI(today);
-    const timezone = "Asia/Bangkok";
+  const apiUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${latitude}&longitude=${longitude}&start_date=${start}&end_date=${end}&daily=precipitation_sum,et0_fao_evapotranspiration&timezone=${timezone}`;
 
-    const apiUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${latitude}&longitude=${longitude}&start_date=${start}&end_date=${end}&daily=precipitation_sum,et0_fao_evapotranspiration&timezone=${timezone}`;
-
+  return new Promise((resolve) => {
     https.get(apiUrl, (apiRes) => {
       let data = '';
       apiRes.on('data', chunk => data += chunk);
@@ -68,8 +64,10 @@ const server = http.createServer(async (req, res) => {
         try {
           const json = JSON.parse(data);
           if (!json.daily) {
-            res.writeHead(500, { 'Content-Type': 'text/plain' });
-            res.end('Failed to get precipitation data');
+            resolve({
+              statusCode: 500,
+              body: 'Failed to get precipitation data'
+            });
             return;
           }
 
@@ -81,23 +79,23 @@ const server = http.createServer(async (req, res) => {
             csvRows.push(`${timestamp};${locationName};PRCP001;precipitation;${precipitation};${evapotranspiration}`);
           }
 
-          res.writeHead(200, { 'Content-Type': 'text/csv' });
-          res.end(csvRows.join("\n"));
+          resolve({
+            statusCode: 200,
+            headers: { 'Content-Type': 'text/csv' },
+            body: csvRows.join("\n")
+          });
         } catch (err) {
-          res.writeHead(500, { 'Content-Type': 'text/plain' });
-          res.end("Error parsing data");
+          resolve({
+            statusCode: 500,
+            body: "Error parsing data"
+          });
         }
       });
     }).on('error', () => {
-      res.writeHead(500, { 'Content-Type': 'text/plain' });
-      res.end("Error fetching data");
+      resolve({
+        statusCode: 500,
+        body: "Error fetching data"
+      });
     });
-  } else {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end("Use /precip?location=Solok");
-  }
-});
-
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+  });
+};
